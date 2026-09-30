@@ -371,11 +371,14 @@ subroutine QP_mpa(X,Xk,E,k,q,qp,Xw,GW_iter)
        X_cols=X_par(iq_mem)%cols
      endif
      !
-     YAMBO_ALLOC(MPA_Xo,(Xw%n_freqs))
+     ! Thread-private MPA_Xo: PRIVATE allocatables start unallocated on each
+     ! thread, so each thread allocates its own copy once with plain allocate
+     ! (avoids YAMBO counter races and the unallocated-PRIVATE bug).
      !
      !$omp parallel default(shared),private(ig1,ig2,MPred,PPcond_rate,MP_err,cond_num,i_np,MPA_Xo,l_rim_w_g), &
      !$omp &        reduction(+:MPred_rate,PPcond_Qrate,MP_Qerr,cond_numQ)
      !
+     allocate(MPA_Xo(Xw%n_freqs))
      !
      !$omp do collapse(2)
      do ig2=X_cols(1),X_cols(2)
@@ -410,11 +413,10 @@ subroutine QP_mpa(X,Xk,E,k,q,qp,Xw,GW_iter)
      enddo
      !
      !$omp end do
-     !   
+     !
+     deallocate(MPA_Xo)
      !
      !$omp end parallel
-     !
-     YAMBO_FREE(MPA_Xo)
      !
      ! AF: retrieve G_parallelism on MPA pole fitting,
      !     if present
@@ -422,6 +424,13 @@ subroutine QP_mpa(X,Xk,E,k,q,qp,Xw,GW_iter)
      if (l_para_G_MPA) then
        call PP_redux_wait(MPA_R_par(1)%blc,COMM=PAR_COM_X_WORLD%COMM)
        call PP_redux_wait(MPA_E_par(1)%blc,COMM=PAR_COM_X_WORLD%COMM)
+       if (io_MULTIPOLE) then
+        ! MB: this reduction is needed for the I/O MPA part
+        call PP_redux_wait(MPred_rate,COMM=PAR_COM_X_WORLD%COMM)
+        call PP_redux_wait(PPcond_Qrate,COMM=PAR_COM_X_WORLD%COMM)
+        call PP_redux_wait(MP_Qerr,COMM=PAR_COM_X_WORLD%COMM)
+        call PP_redux_wait(cond_numQ,COMM=PAR_COM_X_WORLD%COMM)
+      endif
      endif
      !
      X_is_TR_rotated=.false.

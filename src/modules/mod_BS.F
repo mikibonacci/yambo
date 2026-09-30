@@ -139,6 +139,10 @@ module BS
  real(SP):: BS_eh_en(2)
  real(SP):: BS_eh_win(2)
  !
+ ! Dynamic BSE frequency and broadening
+ real(SP):: BS_dyn_omega
+ real(SP):: BS_dyn_eta
+ !
  ! PW components ...
  !==================
  integer :: O_ng

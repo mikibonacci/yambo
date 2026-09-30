@@ -11,7 +11,7 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
  !
  use pars,          ONLY:SP,schlen,pi,cZERO,cI
  use LOGO,          ONLY:pickup_a_random
- use drivers,       ONLY:l_bs_fxc,l_tddft,l_rim_w
+ use drivers,       ONLY:l_bs_fxc,l_tddft,l_rim_w, l_mpa
  use frequency,     ONLY:w_samp
  use electrons,     ONLY:levels,spin_occ,spin,n_spin,n_spinor,n_sp_pol
  use FFT_m,         ONLY:fft_size
@@ -35,7 +35,8 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
 &                        WF_phase,n_BS_blks,BS_blk,BS_T_grp,BSK_IO_mode,BSK_IO_sum_value,&
 &                        BS_nT_grps,l_BS_ares_from_res,BS_K_has_been_calculated_loaded,&
 &                        l_BSE_minimize_memory,l_BSE_restart,l_BSE_kernel_complete,&
-&                        BS_perturbative_SOC,BS_K_cutoff,BS_max_val,l_BS_magnons
+&                        BS_perturbative_SOC,BS_K_cutoff,BS_max_val,l_BS_magnons,&
+&                        BS_dyn_omega,BS_dyn_eta
  use collision_el,  ONLY:elemental_collision_free
  use IO_int,        ONLY:io_control
  use IO_m,          ONLY:REP,OP_WR,RD,WR,WR_CL,OP_APP,io_BS_K,deliver_IO_error_message
@@ -91,11 +92,13 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
  complex(SP), allocatable DEV_ATTR :: O1(:),O2(:),O_times_W(:)
  !
  complex(SP),   external :: K_correlation_kernel_std,K_correlation_kernel_dir
+ complex(SP),   external :: K_correlation_kernel_dir_mpa
  complex(SP),   external :: TDDFT_ALDA_eh_space_G_kernel
  complex(SP),   external :: K_exchange_kernel_resonant,K_exchange_kernel_coupling
  !
  logical    :: l_bs_exch,l_bs_corr,l_bs_exch_wf_in_loop,l_bs_tddft_wf_in_loop,l_matrix_init,BS_blk_todo,l_tddft_comp,&
- &             l_load_kernel,l_write_kernel,l_write_kernel_step,l_skip_phases,l_std_alg,l_dir_alg,l_tddft_gsum,l_tddft_rsum
+ &             l_load_kernel,l_write_kernel,l_write_kernel_step,l_skip_phases,l_std_alg,l_dir_alg,l_tddft_gsum,l_tddft_rsum,&
+ &             l_dynamic_kernel
  !
  ! I/O
  !
@@ -226,7 +229,24 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
  if (l_rim_w) call QP_interpolate_W(X,Xw,q,'BSE')
  !
  io_X_err=0
- if (l_bs_corr) call K_screened_interaction(X,Xw,q,io_X_err)
+ !
+ if (l_bs_corr .and. .not.l_mpa) call K_screened_interaction(X,Xw,q,io_X_err)
+ !
+ ! If MPA, we perform the fit and we obtain the MPA coefficients. 
+ ! The effective dynamical W will be computed inside the correlation_mpa function
+ ! A non-positive user frequency selects the static MPA/BSE path.  A
+ ! strictly positive frequency activates the dynamical pole contraction.
+ l_dynamic_kernel = l_mpa .and. BS_dyn_omega > 0._SP
+ if (l_bs_corr.and.l_mpa) then
+   if (l_dynamic_kernel) then
+     call K_screened_interaction_mpa(X,Xw,q,io_X_err)
+     ! Prepare retained or disk-backed coefficients before the transition loops.
+     if (io_X_err==0) call K_mpa_load_if_needed(X,Xw,q)
+   else
+     ! Static screening: construct the ordinary BS_W matrix.
+     call K_screened_interaction(X,Xw,q,io_X_err)
+   endif
+ endif
  !
  if (io_X_err<0) then
    call deliver_IO_error_message(io_X_err,'PP/Em1s')
@@ -742,16 +762,31 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
          !
          ! Correlations
          if (iHxc==3) then
-           if (l_std_alg)       H_c=K_correlation_kernel_std(i_block,i_p,i_pmq, &
+           if (l_std_alg)   then
+                H_c=K_correlation_kernel_std(i_block,i_p,i_pmq, &
 &                                   i_k_s,i_kp_s,i_c_k,i_c_p,i_kmq_s,i_kp_mq_s,i_v_k,i_v_p,     &
 &                                   i_kmq_t,i_pmq_t,i_k_sp_pol_c,i_p_sp_pol_c,i_k_sp_pol_v,i_p_sp_pol_v,  &
 &                                   iq_W,iq_W_s,ig_W,i_k_s_m1,iq_W_s_mq,ig_W_mq,i_kmq_s_m1,&
 &                                   BS_n_g_W,O1,O2,O_times_W)
-           if (l_dir_alg)       H_c=K_correlation_kernel_dir(i_block,i_p,i_pmq, &
+           endif
+           if (l_dir_alg .and. .not. l_dynamic_kernel)   then
+                H_c=K_correlation_kernel_dir(i_block,i_p,i_pmq, &
 &                                   i_k_s,i_p_s, i_c_k,i_c_p,i_kmq_s,i_pmq_s  ,i_v_k,i_v_p,     &
 &                                   i_kmq_t,i_pmq_t,i_k_sp_pol_c,i_p_sp_pol_c,i_k_sp_pol_v,i_p_sp_pol_v,  &
 &                                   iq_W,iq_W_s,ig_W,i_k_s_m1,iq_W_s_mq,ig_W_mq,i_kmq_s_m1,&
 &                                   BS_n_g_W,O1,O2,O_times_W)
+           else if (l_dir_alg .and. l_dynamic_kernel .and. mode_now=="R") then
+                ! In the MPA path the pole coefficients replace the static
+                ! BS_W contraction.  Ken and the two IBZ momenta are passed
+                ! explicitly because the pole denominators contain energies.
+                H_c=K_correlation_kernel_dir_mpa(i_block,i_p,i_pmq, i_k, i_kmq, Ken, BS_dyn_omega, BS_dyn_eta, &
+&                                    i_k_s,i_p_s, i_c_k,i_c_p,i_kmq_s,i_pmq_s  ,i_v_k,i_v_p,     &
+&                                    i_kmq_t,i_pmq_t,i_k_sp_pol_c,i_p_sp_pol_c,i_k_sp_pol_v,i_p_sp_pol_v,  &
+&                                    iq_W,iq_W_s,ig_W,i_k_s_m1,iq_W_s_mq,ig_W_mq,i_kmq_s_m1,&
+&                                    BS_n_g_W,O1,O2,O_times_W)
+           else if (l_dir_alg .and. l_dynamic_kernel) then
+                call error('[BSE MPA] Dynamical direct kernel supports resonant mode R only')
+           endif
          endif
          !         
        case ("C","Q")

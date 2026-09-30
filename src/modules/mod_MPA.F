@@ -36,7 +36,7 @@ module mpa_m
  !
  use pars,            ONLY:SP,DP,cZERO,cONE,cI
  use functions,       ONLY:NAN
- use matrix,          ONLY:PAR_matrix
+ use matrix,          ONLY:PAR_matrix,MATRIX_reset
  use gpu_m,           ONLY:have_gpu
  !
 #include <y_memory.h>
@@ -45,13 +45,45 @@ module mpa_m
  complex(SP),      allocatable, target :: MPA_freqs(:)
  type(PAR_matrix), allocatable, target :: MPA_E_par(:)
  type(PAR_matrix), allocatable, target :: MPA_R_par(:)
+ ! Optional retained MPA poles and residues for later consumers.
+ type(PAR_matrix), allocatable, target :: MPA_E_store(:)
+ type(PAR_matrix), allocatable, target :: MPA_R_store(:)
+ ! In-memory bare Coulomb prefactor.  This is deliberately not part of
+ ! ndb.mpa_ER: it is rebuilt from the current q/cutoff/RIM setup.
+ type(PAR_matrix), allocatable, target :: MPA_V_store(:)
  complex(SP), allocatable DEV_ATTR, target :: MPA_E_par_d(:,:,:)
  complex(SP), allocatable DEV_ATTR, target :: MPA_R_par_d(:,:,:)
  !
  public :: mpa_RE_solver,err_func_X
- public :: MPA_alloc,MPA_free
+ public :: MPA_alloc,MPA_free,MPA_store_free
  !
 contains
+ !
+ subroutine MPA_store_free()
+   implicit none
+   integer :: iq
+   !
+   if (allocated(MPA_E_store)) then
+     do iq=1,size(MPA_E_store)
+       call MATRIX_reset(MPA_E_store(iq))
+     enddo
+     deallocate(MPA_E_store)
+   endif
+   !
+   if (allocated(MPA_R_store)) then
+     do iq=1,size(MPA_R_store)
+       call MATRIX_reset(MPA_R_store(iq))
+     enddo
+     deallocate(MPA_R_store)
+   endif
+   if (allocated(MPA_V_store)) then
+     do iq=1,size(MPA_V_store)
+       call MATRIX_reset(MPA_V_store(iq))
+     enddo
+     deallocate(MPA_V_store)
+   endif
+   !
+ end subroutine MPA_store_free
  !
  subroutine MPA_alloc(d)
    implicit none
@@ -761,5 +793,3 @@ contains
  !
 !
 end module mpa_m
-
-

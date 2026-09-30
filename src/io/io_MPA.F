@@ -139,6 +139,10 @@ integer function io_MPA(X,Xw,ID)
    call def_variable_bulk(ID_frag,trim(ch),1,(/2,X%ng_db,X%ng_db,X%mpa_npoles/),SP,par_io_kind='independent')
    call io_variable_bulk(ID_frag,1,C3=MPA_R_par(1)%blc(:,:,:X%mpa_npoles),IPOS=(/1,MPA_R_par(1)%rows(1),MPA_R_par(1)%cols(1),1/))
    !
+   ! Propagate bulk-read errors (e.g. a missing residue variable).
+   io_MPA=io_status(ID_frag)
+   if (io_MPA/=0) goto 1
+   !
    if (read_is_on(ID) .and. different_db_RL_order) then 
      call error('[io_MPA] different_db_RL_order    not implemented')
      !

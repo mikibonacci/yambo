@@ -43,6 +43,7 @@ subroutine K_screened_interaction(X,Xw,q,io_X_err)
  !
  integer    :: BS_W_size2,i_g2,i_g3,i_g2_mat,i_g3_mat,iq_W,NQ
  logical    :: W_is_em1s,W_is_pp,W_is_unscreened,l_RIM_W_g
+ logical    :: W_is_mpa
  !
  real(SP), allocatable DEV_ATTR :: RIM_vpW(:,:)
  !
@@ -81,13 +82,16 @@ subroutine K_screened_interaction(X,Xw,q,io_X_err)
  !
  if (.not.W_is_unscreened) then
    !
-   ! PP/Epsm1S DBs
+   ! MPA/PP/Epsm1S DBs
    !
    W_is_em1s=X%whoami==2
    W_is_pp  =X%whoami==4
+   W_is_mpa =X%whoami==5
    !
    if (W_is_em1s) call X_ALLOC_elemental('X',(/X%ng,X%ng,1/))
    if (W_is_pp)   call X_ALLOC_elemental('X',(/X%ng,X%ng,2/))
+   ! is w=0 always the first one in Xmpa?
+   if (W_is_mpa)   call X_ALLOC_elemental('X',(/X%ng,X%ng,X%mpa_npoles/))
    !
  endif
  !
@@ -155,7 +159,8 @@ subroutine K_screened_interaction(X,Xw,q,io_X_err)
        do i_g3=1,RIM_W_ng
          do i_g2=1,RIM_W_ng
            RIM_vpW(i_g2,i_g3)= real(DEV_VAR(RIM_W)(1,iq_W,i_g2,i_g3),SP)
-           if(i_g2==i_g3) RIM_vpW(i_g2,i_g2)=RIM_vpW(i_g2,i_g2)+2._SP*gamp_p(i_g2,i_g2)
+           ! no need to do the following if diagonal: not used in that case.
+           if(i_g2==i_g3 .and. .not.BS_W_is_diagonal) RIM_vpW(i_g2,i_g2)=RIM_vpW(i_g2,i_g2)+2._SP*gamp_p(i_g2,i_g2)
          enddo
        enddo
        !DEV_ACC_DEBUG end data

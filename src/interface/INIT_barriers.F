@@ -132,7 +132,7 @@ subroutine INIT_barriers()
  !
  l_flag=l_bss.or.l_bse
  if (l_flag) then
-   on_runlevels='optics bse bss tddft em1s dipoles em1d ppa photolum rim_w'
+   on_runlevels='optics bse bss tddft em1s dipoles em1d ppa mpa photolum rim_w'
    call switch_off_runlevel('all',except=trim(on_runlevels)//' '//trim(always_on_runlevels))
    goto 1
  endif
