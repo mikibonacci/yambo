@@ -214,13 +214,16 @@ end subroutine K_block_free
 !
 !
 subroutine K_block_symmetrize(i_B)
- use BS,           ONLY:BS_blk,l_BS_ares_from_res
+ use BS,           ONLY:BS_blk,l_BS_ares_from_res,BS_dyn_kernel_full
  implicit none
  integer, intent(in) :: i_B
+ integer :: i_Tk,i_Tp,i_r,i_c
+ !
+ ! Dynamic MPA blocks contain independently evaluated ordered elements.
+ ! Their Hermitian projection is performed only after dense matrix folding.
+ if (BS_dyn_kernel_full) return
  !
  ! Symmetrize the DIAGONAL blocks only (i_Tk=i_Tp)
- !
- integer :: i_Tk,i_Tp,i_r,i_c
  !
  i_Tk  =BS_blk(i_B)%iT_k
  i_Tp  =BS_blk(i_B)%iT_p
@@ -265,11 +268,12 @@ end subroutine
 !
 !
 subroutine BS_blks_symmetrize_K()
- use BS,           ONLY:BS_blk,n_BS_blks
+ use BS,           ONLY:BS_blk,n_BS_blks,BS_dyn_kernel_full
  implicit none
  integer :: i_B
+ ! Do not impose static block symmetries on the dynamic ordered kernel.
+ if (BS_dyn_kernel_full) return
  do i_B=1,n_BS_blks
    call K_block_symmetrize(i_B)
  enddo
 end subroutine BS_blks_symmetrize_K
-

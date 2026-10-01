@@ -12,7 +12,7 @@ subroutine K_inversion_driver(iq,W,E,k,q)
  use BS_solvers,     ONLY:BSS_inversion_mode,BSS_desc,K_INV_PL,K_INV_EPS,&
 &                         K_Inversion_data,K_slk,K_inv_slk
  use BS,             ONLY:BS_H_dim,BS_Blocks_symmetrize_K,BS_blk,l_BS_ares_from_res,&
-&                         BS_K_anti_resonant,l_BS_photolum,BS_res_ares_n_mat
+&                         BS_K_anti_resonant,l_BS_photolum,BS_res_ares_n_mat,BS_dyn_kernel_full
  use electrons,      ONLY:levels
  use frequency,      ONLY:w_samp
  use R_lattice,      ONLY:bz_samp
@@ -82,7 +82,14 @@ subroutine K_inversion_driver(iq,W,E,k,q)
  !
  ! Symmetrize the K blocks (to be eventually sent to the BLACS)
  !=========================
- if (linear_algebra_is_parallel) call BS_Blocks_symmetrize_K()
+ if (linear_algebra_is_parallel) then
+   if (BS_dyn_kernel_full) then
+     ! The dynamic matrix is Hermitianized only after dense folding.  The
+     ! BLACS path consumes BS_blk directly and cannot apply that projection.
+     call error('[BSE MPA] Dynamic full-matrix inversion requires the dense path')
+   endif
+   call BS_Blocks_symmetrize_K()
+ endif
  !
 #endif
  !

@@ -277,6 +277,15 @@ module interfaces
     character(*), intent(in) :: what
    end subroutine K_stored_in_a_big_matrix
    !
+   ! Dense BSE matrix dump.  This external routine has an assumed-shape,
+   ! TARGET matrix argument, so callers must see an explicit interface.
+   subroutine K_dump_full_matrix(iq,BS_mat,hermitianized)
+    use pars,           ONLY:SP
+    integer,      intent(in) :: iq
+    complex(SP), target :: BS_mat(:,:)
+    logical,      intent(in) :: hermitianized
+   end subroutine K_dump_full_matrix
+   !
    subroutine K_diago_perturbative(pert_dim, what, i_BS_mat, &
     &           BS_corrections, BS_VR, neigs_this_cpu, neig_shift, BS_VL, BS_Overlap) 
      use pars,           ONLY:SP,cZERO
@@ -392,4 +401,3 @@ module interfaces
  end interface
  !
 end module interfaces
-

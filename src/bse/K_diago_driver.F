@@ -26,7 +26,8 @@ subroutine K_diago_driver(iq,W,X_static)
  use stderr,         ONLY:intc
  use units,          ONLY:HA2EV
  use BS,             ONLY:BS_K_coupling,BS_H_dim,BS_K_dim,BS_perturbative_SOC,&
-&                         BS_res_ares_n_mat,l_BS_optics,l_BS_dichroism,l_BS_ares_from_res !,BS_Blocks_symmetrize_K,&
+&                         BS_res_ares_n_mat,l_BS_optics,l_BS_dichroism,l_BS_ares_from_res,&
+&                         BS_dyn_kernel_full !,BS_Blocks_symmetrize_K,&
  use BS_solvers,     ONLY:io_BSS_diago,BSS_perturbative_width,BSS_mode, BSS_resize,BSS_n_eig_Input, &
 &                         BSS_write_eig_2_db,BSS_eh_W,BSS_n_eig,BS_E,BSS_slepc_pseudo_herm,write_bs_ev_par,&
 &                         BSS_ydiago_solver,BSS_first_eig,BSS_target_E,BSS_trange_E,BSS_er,BSS_slepc_precondition
@@ -152,8 +153,19 @@ subroutine K_diago_driver(iq,W,X_static)
    call warning("non-linear optics forces DP compilation and breaks Ydiago library interface in SP")
    l_ydiago = .false.
    l_diago  = .true.
- endif
+endif
 #endif
+ !
+ ! Dynamic MPA is explicitly Hermitianized in the dense matrix path.  Force
+ ! the ordinary Hermitian diagonalizer so block/shell solvers cannot bypass
+ ! that projection or apply static BSE symmetries to the raw blocks.
+ if (BS_dyn_kernel_full) then
+   l_ydiago=.FALSE.
+   l_slepc =.FALSE.
+   l_diagx =.FALSE.
+   l_chase =.FALSE.
+   l_diago =.TRUE.
+ endif
  !
  if(l_diago) Solver="Diago"
  if(l_diagx) Solver="Diagx"
@@ -614,6 +626,10 @@ subroutine K_diago_driver(iq,W,X_static)
      BSS_n_eig=BSS_n_eig_Input
      !
      K_is_not_hermitian=BS_K_coupling.or.(allocated(BSS_eh_W).and..not.BSS_perturbative_width)
+     if (BS_dyn_kernel_full) then
+       ! K_stored_in_a_big_matrix has already projected the dense matrix.
+       K_is_not_hermitian=.FALSE.
+     endif
      !
 #if defined _SLEPC && !defined _NL
      !

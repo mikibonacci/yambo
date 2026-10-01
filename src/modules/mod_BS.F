@@ -142,6 +142,10 @@ module BS
  ! Dynamic BSE frequency and broadening
  real(SP):: BS_dyn_omega
  real(SP):: BS_dyn_eta
+ ! Dynamic MPA kernels are evaluated for every ordered transition pair.
+ logical :: BS_dyn_kernel_full=.FALSE.
+ ! Dump the raw and Hermitianized dense BSE matrices for external checks.
+ logical :: BS_dump_full_H=.FALSE.
  !
  ! PW components ...
  !==================
@@ -360,7 +364,8 @@ module BS
      integer              :: i_block
      integer(IP)          :: BS_Block_size
      !
-     if (BS_blk(i_block)%iT_k==BS_blk(i_block)%iT_p.and.BS_blk(i_block)%mode=="R") then
+     if (BS_blk(i_block)%iT_k==BS_blk(i_block)%iT_p.and.BS_blk(i_block)%mode=="R".and.&
+&        .not.BS_dyn_kernel_full) then
        BS_Block_size= (BS_blk(i_block)%size(1)*(BS_blk(i_block)%size(1)+1))/2
      else
        BS_Block_size=BS_blk(i_block)%size(1)*BS_blk(i_block)%size(2)
@@ -373,6 +378,10 @@ module BS
      ! Symmetrize the DIAGONAL blocks only (i_Tk=i_Tp)
      !
      integer :: i_B,i_Tk,i_Tp,i_r,i_c
+     !
+     ! Dynamic MPA blocks are not symmetrized here.  The full ordered
+     ! matrix is projected only after MPI reduction in K_stored_in_a_big_matrix.
+     if (BS_dyn_kernel_full) return
      !
      do i_B=1,n_BS_blks
        !
@@ -407,4 +416,3 @@ module BS
    end subroutine BS_Blocks_symmetrize_K
    !
 end module BS
-

@@ -36,7 +36,7 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
 &                        BS_nT_grps,l_BS_ares_from_res,BS_K_has_been_calculated_loaded,&
 &                        l_BSE_minimize_memory,l_BSE_restart,l_BSE_kernel_complete,&
 &                        BS_perturbative_SOC,BS_K_cutoff,BS_max_val,l_BS_magnons,&
-&                        BS_dyn_omega,BS_dyn_eta
+&                        BS_dyn_omega,BS_dyn_eta,BS_dyn_kernel_full
  use collision_el,  ONLY:elemental_collision_free
  use IO_int,        ONLY:io_control
  use IO_m,          ONLY:REP,OP_WR,RD,WR,WR_CL,OP_APP,io_BS_K,deliver_IO_error_message
@@ -209,10 +209,30 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
    call msg('r','[BSE] Correlation components ',(/BS_n_g_W,O_ng/))
  endif
  !
+ ! Keep the full-matrix mode visible to restart and block handling.  The
+ ! transition groups and blocks were already created with this flag by
+ ! K_driver_init; repeat the assignment here after the local correlation
+ ! selection has been finalized.
+ l_dynamic_kernel = l_bs_corr .and. l_mpa .and. BS_dyn_omega > 0._SP
+ BS_dyn_kernel_full = l_dynamic_kernel
+ if (BS_dyn_kernel_full) then
+   ! A previous triangular/static database cannot be used as the source of
+   ! an ordered dynamic matrix.  Keep the current run in fresh-kernel mode.
+   l_BSE_restart=.FALSE.
+   l_BSE_kernel_complete=.FALSE.
+ endif
+ !
  call K_restart(iq,X,BS_ID(1),BS_ID(2),BS_ID(3),l_partial_kernel_loaded)
  ID_head =BS_ID(1)
  ID      =BS_ID(2)
  ID_compr=BS_ID(3)
+ !
+ if (BS_dyn_kernel_full) then
+   ! K_restart may discover an old database, but it must not make this
+   ! dynamic calculation return early or skip ordered matrix elements.
+   l_BSE_restart=.FALSE.
+   l_BSE_kernel_complete=.FALSE.
+ endif
  !
  if( l_BSE_kernel_complete ) return
  !
@@ -236,9 +256,9 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
  ! The effective dynamical W will be computed inside the correlation_mpa function
  ! A non-positive user frequency selects the static MPA/BSE path.  A
  ! strictly positive frequency activates the dynamical pole contraction.
- l_dynamic_kernel = l_mpa .and. BS_dyn_omega > 0._SP
  if (l_bs_corr.and.l_mpa) then
    if (l_dynamic_kernel) then
+     if (.not.l_dir_alg) call error('[BSE MPA] Dynamic kernel requires the direct correlation algorithm')
      call K_screened_interaction_mpa(X,Xw,q,io_X_err)
      ! Prepare retained or disk-backed coefficients before the transition loops.
      if (io_X_err==0) call K_mpa_load_if_needed(X,Xw,q)
@@ -622,7 +642,9 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
        H_pos(2) = sum(BS_T_grp(I_Tgrp_p_st:I_Tgrp_p-1)%size)+i_Tp+& 
        &              (BS_T_grp(I_Tgrp_p)%i_res_ares-1)*BS_K_dim(1)
        !
-       if (H_pos(1)>H_pos(2)) cycle
+       ! Static kernels are evaluated only in the upper triangle.  Dynamic
+       ! MPA needs both ordered elements before the matrix projection.
+       if (.not.BS_dyn_kernel_full.and.H_pos(1)>H_pos(2)) cycle
        !
        i_k_bz  = BS_T_grp(i_Tgrp_k)%table(i_Tk,1) 
        i_p_bz  = BS_T_grp(i_Tgrp_p)%table(i_Tp,1) 
@@ -790,6 +812,7 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
          endif
          !         
        case ("C","Q")
+         if (l_dynamic_kernel) call error('[BSE MPA] Dynamic kernel supports the resonant mode R only')
          !
          ! :::COUPLING TERM:::
          !=============================
@@ -960,11 +983,15 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
  enddo ! iHxc loop
  !
 #if defined _PAR_IO
- if(BS_K_cutoff>0._SP) then
+ if(BS_K_cutoff>0._SP.and..not.BS_dyn_kernel_full) then
    call PP_redux_wait(BS_max_val_CPU)
    BS_max_val=maxval(BS_max_val_CPU)
    call K_compress(iq,ID_compr)
    call K_compressed_IO(iq,io_BS_err,"write")
+ else if (BS_dyn_kernel_full.and.BS_K_cutoff>0._SP) then
+   ! The compressed-index format is triangular.  Keep dynamic blocks full
+   ! and uncompressed until a full-matrix compression layout is implemented.
+   call warning('[BSE MPA] Kernel compression disabled for the full dynamic matrix')
  endif
  !
  call io_control(ACTION=WR_CL,COM=REP,ID=ID_head)

@@ -34,7 +34,7 @@ subroutine INIT_load(defs,en,q,k,X,Xw,Dip)
 &                        RIM_n_rand_pts,cyl_ph_radius,box_length,cyl_length,cut_geometry,ws_cutoff
  use BS,            ONLY:BSE_mode,BSE_prop,BSK_mode,BS_eh_en,BS_eh_win,BS_q,BS_bands,&
 &                        BS_n_g_W,BS_n_g_exch,BS_n_g_fxc,BSE_L_kind,BS_K_cutoff,BSK_IO_mode,BSE_dipole_geometry,&
-& BS_dyn_omega,BS_dyn_eta
+& BS_dyn_omega,BS_dyn_eta,BS_dump_full_H
  use BS_solvers,    ONLY:BSS_mode,Haydock_threshold,Haydock_iterIO,BSS_n_freqs,BSS_target_E,BSS_trange_E,&
 &                        BSS_dr,BSS_er,BSS_E_dir,BSS_Q_dir,BSS_damp_reference,BSS_inversion_mode,BSS_n_eig_Input,&
 &                        BSS_Wd,K_INV_EPS,K_INV_PL,BSS_n_eig,BSS_first_eig,Haydock_iterMAX,BSS_ydiago_solver
@@ -333,8 +333,9 @@ subroutine INIT_load(defs,en,q,k,X,Xw,Dip)
  call it(defs,'BSSNEig',       '[SLEPC/DIAGO] Number of eigenvalues to compute',BSS_n_eig_Input)
  call it(defs,'BSSFirstEig',  '[DIAGO] Index of the first eigenvalues to compute',BSS_first_eig,verb_level=V_resp)
  call it(defs,'BSSEnRange',   '[DIAGO] Target energy to find eigenvalues',BSS_trange_E,E_unit,verb_level=V_resp)
- call it(defs,'BSEDynOmega','[BSK] Dynamical kernel evaluation energy (-1 will do a static kernel)',BS_dyn_omega,E_unit)
- call it(defs,'BSEDynEta',  '[BSK] Dynamical kernel broadening',BS_dyn_eta,E_unit)
+ call it(defs,'BSEDynOmega','[BSK] Dynamical kernel evaluation energy omega_s in eV (-1 will do a static kernel)',BS_dyn_omega,E_unit)
+ call it(defs,'BSEDynEta',  '[BSK] Dynamical kernel broadening eta in eV',BS_dyn_eta,E_unit)
+ call it('f',defs,'BSEDumpFullH','[BSE] Dump raw and Hermitianized dense BSE matrices')
 #if defined _SLEPC && !defined _NL
  call it(defs,'BSSSlepcApproach','[SLEPC] Approach ("Krylov-Schur","Generalized-Davidson","Jacobi-Davidson")',&
 &                                                                          BSS_slepc_approach,verb_level=V_resp)

@@ -12,7 +12,7 @@ subroutine K_compress(iq,ID_compr)
  use LIVE_t,       ONLY:live_timing
  use IO_int,       ONLY:io_control
  use IO_m,         ONLY:OP_WR,WR
- use BS,           ONLY:BS_blk,BS_T_grp,BS_max_val,BS_K_cutoff,n_BS_blks
+ use BS,           ONLY:BS_blk,BS_T_grp,BS_max_val,BS_K_cutoff,n_BS_blks,BS_dyn_kernel_full
  !
  implicit none
  !
@@ -28,6 +28,12 @@ subroutine K_compress(iq,ID_compr)
  !======================================================
  !
  call msg("s","Kernel compression with parameter",BS_K_cutoff)
+ if (BS_dyn_kernel_full) then
+   ! K_compressed_IO uses triangular global indices.  Applying it to the
+   ! ordered dynamic matrix would produce an invalid compressed database.
+   call warning('[BSE MPA] Kernel compression is disabled for ordered dynamic blocks')
+   return
+ endif
  !
  call io_control(ACTION=OP_WR,ID=ID_compr)
  io_BS_err=io_BS_PAR_init(iq,ID_compr,"compressed_head")
@@ -51,6 +57,8 @@ subroutine K_compress(iq,ID_compr)
        H_pos(1) = sum(BS_T_grp(:I_Tgrp_k-1)%size)+i_Tk
        H_pos(2) = sum(BS_T_grp(:I_Tgrp_p-1)%size)+i_Tp
        !
+       ! Dynamic full matrices return above because this database format is
+       ! triangular; the remaining path therefore keeps the static skip.
        if (H_pos(1)>H_pos(2)) cycle
        !
        if( abs(BS_blk(i_block)%mat(i_Tk,i_Tp)) >= BS_max_val*BS_K_cutoff ) cycle

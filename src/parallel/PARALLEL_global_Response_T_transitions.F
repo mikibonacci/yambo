@@ -8,7 +8,7 @@
 subroutine PARALLEL_global_Response_T_transitions(Xk)
  !
  use R_lattice,     ONLY:bz_samp,nXkibz
- use BS,            ONLY:BS_nT_at_k,BS_nT_grps,BS_n_eh_spaces
+ use BS,            ONLY:BS_nT_at_k,BS_nT_grps,BS_n_eh_spaces,BS_dyn_kernel_full
  use IO_int,        ONLY:IO_and_Messaging_switch
  use parallel_int,  ONLY:PARALLEL_index,PARALLEL_live_message
  use parallel_m,    ONLY:PAR_n_c_bands,PAR_n_v_bands,PP_indexes_reset,master_cpu
@@ -69,12 +69,21 @@ subroutine PARALLEL_global_Response_T_transitions(Xk)
  !
  call PP_indexes_reset(PAR_IND_T_ordered)
  !
+ ! Static kernels keep only the ordered upper triangle.  Dynamic MPA needs
+ ! both (a,b) and (b,a) transition-group pairs for the later projection.
  call PARALLEL_index(PAR_IND_T_ordered,(/BS_nT_grps,BS_nT_grps/),COMM=PAR_COM_T_INDEX,&
-&                    MASK=PAR_IND_T_groups%element_1D,ORDERED=.TRUE.,NO_EMPTIES=.FALSE.)
+&                    MASK=PAR_IND_T_groups%element_1D,ORDERED=.not.BS_dyn_kernel_full,&
+&                    NO_EMPTIES=.FALSE.)
  !
- call PARALLEL_live_message("(e/h)->(e/h)' Transitions (ordered)",ENVIRONMENT="Response_T_space",&
-&                           LOADED=PAR_IND_T_ordered%n_of_elements(PAR_COM_T_INDEX%CPU_id+1),&
-&                           TOTAL=BS_nT_grps*(BS_nT_grps+1)/2,NCPU=PAR_COM_T_INDEX%n_CPU)
+ if (BS_dyn_kernel_full) then
+   call PARALLEL_live_message("(e/h)->(e/h)' Transitions (all ordered)",ENVIRONMENT="Response_T_space",&
+&                             LOADED=PAR_IND_T_ordered%n_of_elements(PAR_COM_T_INDEX%CPU_id+1),&
+&                             TOTAL=BS_nT_grps*BS_nT_grps,NCPU=PAR_COM_T_INDEX%n_CPU)
+ else
+   call PARALLEL_live_message("(e/h)->(e/h)' Transitions (ordered)",ENVIRONMENT="Response_T_space",&
+&                             LOADED=PAR_IND_T_ordered%n_of_elements(PAR_COM_T_INDEX%CPU_id+1),&
+&                             TOTAL=BS_nT_grps*(BS_nT_grps+1)/2,NCPU=PAR_COM_T_INDEX%n_CPU)
+ endif
  !
  ! Linear Algebra setup moved in the solver_driver...
  !

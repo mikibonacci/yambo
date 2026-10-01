@@ -12,7 +12,9 @@ subroutine K_driver_init(what,iq,Ken,Xk)
  use electrons,    ONLY:levels,n_sp_pol,n_spin
  use parser_m,     ONLY:parser
  use parallel_m,   ONLY:PARALLEL_default_mode
+ use com,          ONLY:msg
  use stderr,       ONLY:STRING_match,STRING_split
+ use units,        ONLY:HA2EV
  use BS_solvers,   ONLY:BSS_mode,BSS_slepc_matrix_format,BSS_uses_DbGd,BSS_uses_FKE,BSS_ydiago_solver,&
 &                       BSS_slepc_pseudo_herm,BSS_slepc_double_grp,run_Slepc,BSS_mode,BSS_first_eig,&
 &                       l_abs_prop_chi_bse,l_eels_can_be_computed,l_eels_from_inversion,&
@@ -20,9 +22,10 @@ subroutine K_driver_init(what,iq,Ken,Xk)
  use BS,           ONLY:BSE_L_kind,BSE_mode,BS_K_is_ALDA,BS_dip_size,l_BSE_minimize_memory,BS_perturbative_SOC,&
 &                       BS_perturbative_SOC,l_BS_magnons,l_BS_photolum,BSK_IO_mode,&
 &                       BS_cpl_K_exchange,BS_n_g_exch,BS_res_K_exchange,BS_K_coupling,BS_res_ares_n_mat,&
-&                       BS_n_eh_spaces,l_BS_ares_from_res,BS_bands,BS_K_anti_resonant
+&                       BS_res_K_corr,BS_cpl_K_corr,BS_n_eh_spaces,l_BS_ares_from_res,BS_bands,BS_K_anti_resonant,&
+&                       BS_dyn_omega,BS_dyn_eta,BS_dyn_kernel_full
  use TDDFT,        ONLY:FXC_is_retarded,FXC_n_g_corr,l_Fxc_from_Vxc
- use drivers,      ONLY:l_col_cut,l_rpa_IP,l_alda_fxc,l_bs_fxc
+ use drivers,      ONLY:l_col_cut,l_rpa_IP,l_alda_fxc,l_bs_fxc,l_mpa
  use D_lattice,    ONLY:i_time_rev,i_space_inv,l_3D
 #if defined _RT
  use drivers,      ONLY:l_rt_carriers_in_use
@@ -49,6 +52,23 @@ subroutine K_driver_init(what,iq,Ken,Xk)
  !==========
  BS_n_eh_spaces=1
  BS_res_ares_n_mat=1
+ ! This flag is needed before transition grouping and K_blocks, not only
+ ! inside K_kernel, because dynamic MPA requires all ordered blocks.
+ BS_dyn_kernel_full=(BS_res_K_corr.or.BS_cpl_K_corr).and..not.l_bs_fxc.and.&
+&                    l_mpa.and.BS_dyn_omega>0._SP
+ ! DEBUG MIKI: report the selected BSE kernel mode once, with both the
+ ! user-facing eV values and the internal Hartree values.
+ if (what=="init") then
+   if (BS_dyn_kernel_full) then
+     call msg('s','[BSE] Dynamic MPA BSE correlation kernel enabled') ! DEBUG MIKI
+     call msg('s','[BSE] omega_s = ',BS_dyn_omega*HA2EV,'[eV]') ! DEBUG MIKI
+     call msg('s','[BSE] omega_s internal = ',BS_dyn_omega,'[Ha]') ! DEBUG MIKI
+     call msg('s','[BSE] eta = ',BS_dyn_eta*HA2EV,'[eV]') ! DEBUG MIKI
+     call msg('s','[BSE] eta internal = ',BS_dyn_eta,'[Ha]') ! DEBUG MIKI
+   else if (l_mpa.and.(BS_res_K_corr.or.BS_cpl_K_corr)) then
+     call msg('s','[BSE] Static MPA screened interaction selected') ! DEBUG MIKI
+   endif
+ endif
  !
  ! default mode
  if (iq==1) then
@@ -171,6 +191,13 @@ endif
  if (BS_K_anti_resonant.and..not.l_BS_ares_from_res) then
    BS_n_eh_spaces=2
    if (.not.BS_K_coupling) BS_res_ares_n_mat=2
+ endif
+ ! The first dynamic MPA implementation constructs only the resonant block.
+ if (BS_dyn_kernel_full.and.(BS_K_coupling.or.BS_K_anti_resonant)) then
+   call error('[BSE MPA] Dynamic kernel currently supports resonant-only BSE')
+ endif
+ if (BS_dyn_kernel_full.and.index(BSS_mode,'h')/=0) then
+   call error('[BSE MPA] Dynamic full-matrix mode is not available with Haydock')
  endif
  !
  if (what=="loop-init") return
