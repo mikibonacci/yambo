@@ -277,6 +277,7 @@ subroutine K_mpa_load_if_needed(X,Xw,q,l_loaded)
  call move_alloc(MPA_R_par,R_saved)
  allocate(MPA_E_par(1),MPA_R_par(1))
  !
+ ! AAA: do we need a control first? 
  call io_control(ACTION=OP_RD_CL,MODE=DUMP,COM=REP,SEC=(/1/),ID=ID)
  io_err=io_MPA(X_read,W_read,ID)
  ! A missing mpa_ER database is a normal signal to the caller: it should

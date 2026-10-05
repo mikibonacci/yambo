@@ -23,7 +23,7 @@ subroutine K_driver_init(what,iq,Ken,Xk)
 &                       BS_perturbative_SOC,l_BS_magnons,l_BS_photolum,BSK_IO_mode,&
 &                       BS_cpl_K_exchange,BS_n_g_exch,BS_res_K_exchange,BS_K_coupling,BS_res_ares_n_mat,&
 &                       BS_res_K_corr,BS_cpl_K_corr,BS_n_eh_spaces,l_BS_ares_from_res,BS_bands,BS_K_anti_resonant,&
-&                       BS_dyn_omega,BS_dyn_eta,BS_dyn_kernel_full
+&                       BS_dyn_omega,BS_dyn_eta,BS_dyn_kernel_full,BS_dyn_kernel_hermitianize,BS_dump_full_H
  use TDDFT,        ONLY:FXC_is_retarded,FXC_n_g_corr,l_Fxc_from_Vxc
  use drivers,      ONLY:l_col_cut,l_rpa_IP,l_alda_fxc,l_bs_fxc,l_mpa
  use D_lattice,    ONLY:i_time_rev,i_space_inv,l_3D
@@ -52,6 +52,8 @@ subroutine K_driver_init(what,iq,Ken,Xk)
  !==========
  BS_n_eh_spaces=1
  BS_res_ares_n_mat=1
+ call parser('BSEDynHerm',BS_dyn_kernel_hermitianize)
+ call parser('BSEDumpFullH',BS_dump_full_H)
  ! This flag is needed before transition grouping and K_blocks, not only
  ! inside K_kernel, because dynamic MPA requires all ordered blocks.
  BS_dyn_kernel_full=(BS_res_K_corr.or.BS_cpl_K_corr).and..not.l_bs_fxc.and.&
@@ -60,11 +62,13 @@ subroutine K_driver_init(what,iq,Ken,Xk)
  ! user-facing eV values and the internal Hartree values.
  if (what=="init") then
    if (BS_dyn_kernel_full) then
-     call msg('s','[BSE] Dynamic MPA BSE correlation kernel enabled') ! DEBUG MIKI
-     call msg('s','[BSE] omega_s = ',BS_dyn_omega*HA2EV,'[eV]') ! DEBUG MIKI
-     call msg('s','[BSE] omega_s internal = ',BS_dyn_omega,'[Ha]') ! DEBUG MIKI
-     call msg('s','[BSE] eta = ',BS_dyn_eta*HA2EV,'[eV]') ! DEBUG MIKI
-     call msg('s','[BSE] eta internal = ',BS_dyn_eta,'[Ha]') ! DEBUG MIKI
+     if (BS_dyn_kernel_hermitianize) then
+       call msg('s','[BSE] Dynamic MPA: Hermitianized matrix mode')
+     else
+       call msg('s','[BSE] Dynamic MPA: full non-Hermitian matrix mode')
+     endif
+     call msg('s','[BSE] omega_s = ',BS_dyn_omega*HA2EV,'[eV]')
+     call msg('s','[BSE] eta = ',BS_dyn_eta*HA2EV,'[eV]')
    else if (l_mpa.and.(BS_res_K_corr.or.BS_cpl_K_corr)) then
      call msg('s','[BSE] Static MPA screened interaction selected') ! DEBUG MIKI
    endif

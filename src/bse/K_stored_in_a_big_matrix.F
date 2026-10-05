@@ -13,12 +13,13 @@ subroutine K_stored_in_a_big_matrix(i_BS_mat,BS_mat_dim,BS_mat,iq,what)
  use pars,           ONLY:SP,cI,cZERO,cONE
  use parallel_int,   ONLY:PP_redux_wait
  use BS,             ONLY:BS_K_coupling,n_BS_blks,BS_res_ares_n_mat,&
-&                         l_BS_ares_from_res,BS_dyn_kernel_full,BS_dump_full_H
+&                         l_BS_ares_from_res,BS_dyn_kernel_full,BS_dyn_kernel_hermitianize,BS_dump_full_H
  use BS_solvers,     ONLY:BS_blk,BS_H_dim,BS_K_dim,&
 &                         BSS_perturbative_width,run_inversion,run_Haydock,&
 &                         BSS_eh_E,BSS_eh_W
  use interfaces,      ONLY:K_dump_full_matrix
  use timing_m,       ONLY:timing
+ use com,           ONLY:msg
  !
 #include <y_memory.h>
  !
@@ -140,14 +141,15 @@ subroutine K_stored_in_a_big_matrix(i_BS_mat,BS_mat_dim,BS_mat,iq,what)
  call PP_redux_wait(BS_mat)
  call timing('BSE matrix (REDUX)',OPR='stop')
  !
- if (BS_dump_full_H) then
+ if (BS_dyn_kernel_full.and.BS_dump_full_H) then
    ! The first dump is deliberately placed before the projection: it keeps
    ! the independently computed ordered matrix available for external
    ! diagonalization and for comparing MPI/rank-dependent kernel elements.
+   call msg('s','[BSE] Dynamic MPA: Dumping the full matrix') ! Miki Debug
    call K_dump_full_matrix(iq,BS_mat,.FALSE.)
  endif
  !
- if (BS_dyn_kernel_full) then
+ if (BS_dyn_kernel_full.and.BS_dyn_kernel_hermitianize) then
    ! Hermitianize only after every ordered block has reached the global
    ! dense matrix.  Doing this earlier would mix MPI-local partial data.
    do i=1,BS_mat_dim
@@ -160,10 +162,11 @@ subroutine K_stored_in_a_big_matrix(i_BS_mat,BS_mat_dim,BS_mat,iq,what)
   enddo
  endif
  !
- if (BS_dump_full_H) then
+ if (BS_dyn_kernel_full.and.BS_dump_full_H.and.BS_dyn_kernel_hermitianize) then
    ! Store the projected object in a separate database.  Keeping two files
    ! makes it impossible to confuse the raw ordered matrix with its effective
    ! Hermitian approximation during post-processing.
+   call msg('s','[BSE] Dynamic MPA: Dumping the Hermitianized matrix') ! Miki Debug
    call K_dump_full_matrix(iq,BS_mat,.TRUE.)
  endif
  !
@@ -179,19 +182,23 @@ end subroutine K_stored_in_a_big_matrix
 subroutine K_dump_full_matrix(iq,BS_mat,hermitianized)
  ! Write one globally reduced dense BSE matrix and the transition metadata
  ! needed to interpret its rows and columns outside Yambo.
- use pars,        ONLY:SP,schlen
+ use pars,        ONLY:SP,schlen,IP_YIO,LP_YIO
  use stderr,      ONLY:intc
  use BS,          ONLY:BS_dyn_omega,BS_dyn_eta,BS_dyn_kernel_full,BSqpts
  use BS_solvers,  ONLY:BSS_eh_table,BSS_eh_E,BSS_eh_f,BSS_eh_f_RES,BSS_eh_W
- use IO_m,        ONLY:io_status
- use IO_int,      ONLY:io_connect,io_disconnect,io_header,io_elemental,io_bulk
+ use IO_m,        ONLY:io_status,REP,OP_WR_CL
+ use IO_int,      ONLY:io_control,io_connect,io_header,io_disconnect,&
+&                       def_variable_elemental,io_variable_elemental,&
+&                       def_variable_bulk,io_variable_bulk
+ use timing_m,    ONLY:timing
  implicit none
  integer, intent(in) :: iq
  complex(SP), target :: BS_mat(:,:)
  logical, intent(in) :: hermitianized
- integer :: ID,io_err,N
+ integer :: ID,io_err,N,var_id
  character(schlen) :: db_name
  logical :: marker
+ logical :: connected
  !
  N=size(BS_mat,1)
  marker=hermitianized
@@ -201,48 +208,71 @@ subroutine K_dump_full_matrix(iq,BS_mat,hermitianized)
    db_name='BS_full_H_raw_Q'//trim(intc(iq))
  endif
  !
+ call timing('io_'//db_name,OPR='start')
+ !
+ ! This routine creates a new dump database.  OP_RD_CL would make
+ ! io_connect look for an existing database and consequently fail for
+ ! the first dump (and for every new q-point name).
+ call io_control(ACTION=OP_WR_CL,COM=REP,SEC=(/1,2/),ID=ID)
+ connected=.false.
  io_err=io_connect(desc=trim(db_name),type=2,ID=ID)
- if (io_err/=0) return
- io_err=io_header(ID,XC_KIND='K_E force')
- if (io_err/=0) then
-   call io_disconnect(ID)
-   return
- endif
+ if (io_err/=0) goto 1
+ connected=.true.
+ io_err=io_header(ID,QPTS=.true.,R_LATT=.true.,WF=.true.,IMPOSE_SN=.true.,&
+&                XC_KIND="K_WF force Xs",CUTOFF=.true.,&
+&                PARALLEL_STRUCTURE="Response_T_space",FRAG=.false.)
+ if (io_err/=0) goto 1
  ! Scalar metadata describes the matrix and the approximation applied to it.
- call io_elemental(ID,VAR='BSE_FULL_H_DIM',VAR_SZ=1,MENU=0,I0=N)
- call io_elemental(ID,VAR='BSE_FULL_H_HERMITIANIZED',L0=marker)
- call io_elemental(ID,VAR='BSE_FULL_H_DYNAMIC',L0=BS_dyn_kernel_full)
- call io_elemental(ID,VAR='BSE_FULL_H_Q_INDEX',I0=iq)
+ call def_variable_elemental(ID,'BSE_FULL_H_DIM',1,IP_YIO,0)
+ call io_variable_elemental(ID,VAR='Dense BSE matrix dimension',I0=N)
+ call def_variable_elemental(ID,'BSE_FULL_H_HERMITIANIZED',1,LP_YIO,0)
+ call io_variable_elemental(ID,VAR='Dense BSE matrix hermitianized',L0=marker)
+ call def_variable_elemental(ID,'BSE_FULL_H_DYNAMIC',1,LP_YIO,0)
+ call io_variable_elemental(ID,VAR='Dense BSE matrix dynamic',L0=BS_dyn_kernel_full)
+ call def_variable_elemental(ID,'BSE_FULL_H_Q_INDEX',1,IP_YIO,0)
+ call io_variable_elemental(ID,VAR='Dense BSE matrix q index',I0=iq)
  if (allocated(BSqpts)) then
    if (size(BSqpts,2)>=iq) then
-     call io_elemental(ID,VAR='BSE_FULL_H_Q_POINT',VAR_SZ=3,R1=BSqpts(:,iq))
+     call def_variable_elemental(ID,'BSE_FULL_H_Q_POINT',3,SP,0)
+     call io_variable_elemental(ID,VAR='Dense BSE matrix q point',R1=BSqpts(:,iq))
    endif
  endif
- call io_elemental(ID,VAR='BSE_FULL_H_OMEGA',R0=BS_dyn_omega)
- call io_elemental(ID,VAR='BSE_FULL_H_ETA',R0=BS_dyn_eta)
+ call def_variable_elemental(ID,'BSE_FULL_H_OMEGA',1,SP,0)
+ call io_variable_elemental(ID,VAR='Dense BSE matrix omega',R0=BS_dyn_omega)
+ call def_variable_elemental(ID,'BSE_FULL_H_ETA',1,SP,0)
+ call io_variable_elemental(ID,VAR='Dense BSE matrix eta',R0=BS_dyn_eta)
+ call def_variable_elemental(ID,'',0,0,1)
  ! Dense matrix and transition-basis metadata.
- call io_bulk(ID,'BSE_FULL_H',VAR_SZ=(/2,N,N/))
- call io_bulk(ID,C2=BS_mat)
+ var_id=1
+ call def_variable_bulk(ID,'BSE_FULL_H',var_id,(/2,N,N/),SP)
+ call io_variable_bulk(ID,var_id,C2=BS_mat)
  if (allocated(BSS_eh_table)) then
-   call io_bulk(ID,'BS_TABLE',VAR_SZ=(/size(BSS_eh_table,1),size(BSS_eh_table,2)/))
-   call io_bulk(ID,I2=BSS_eh_table)
+   var_id=var_id+1
+   call def_variable_bulk(ID,'BS_TABLE',var_id,(/size(BSS_eh_table,1),size(BSS_eh_table,2)/),IP_YIO)
+   call io_variable_bulk(ID,var_id,I2=BSS_eh_table)
  endif
  if (allocated(BSS_eh_E)) then
-   call io_bulk(ID,'BS_EH_ENERGIES',VAR_SZ=(/size(BSS_eh_E)/))
-   call io_bulk(ID,R1=BSS_eh_E)
+   var_id=var_id+1
+   call def_variable_bulk(ID,'BS_EH_ENERGIES',var_id,(/size(BSS_eh_E)/),SP)
+   call io_variable_bulk(ID,var_id,R1=BSS_eh_E)
  endif
  if (allocated(BSS_eh_f)) then
-   call io_bulk(ID,'BS_EH_OSCILLATORS',VAR_SZ=(/size(BSS_eh_f)/))
-   call io_bulk(ID,R1=BSS_eh_f)
+   var_id=var_id+1
+   call def_variable_bulk(ID,'BS_EH_OSCILLATORS',var_id,(/size(BSS_eh_f)/),SP)
+   call io_variable_bulk(ID,var_id,R1=BSS_eh_f)
  endif
  if (allocated(BSS_eh_f_RES)) then
-   call io_bulk(ID,'BS_EH_OSCILLATORS_RES',VAR_SZ=(/size(BSS_eh_f_RES)/))
-   call io_bulk(ID,R1=BSS_eh_f_RES)
+   var_id=var_id+1
+   call def_variable_bulk(ID,'BS_EH_OSCILLATORS_RES',var_id,(/size(BSS_eh_f_RES)/),SP)
+   call io_variable_bulk(ID,var_id,R1=BSS_eh_f_RES)
  endif
  if (allocated(BSS_eh_W)) then
-   call io_bulk(ID,'BS_EH_WIDTHS',VAR_SZ=(/size(BSS_eh_W)/))
-   call io_bulk(ID,R1=BSS_eh_W)
+   var_id=var_id+1
+   call def_variable_bulk(ID,'BS_EH_WIDTHS',var_id,(/size(BSS_eh_W)/),SP)
+   call io_variable_bulk(ID,var_id,R1=BSS_eh_W)
  endif
  io_err=io_status(ID)
- call io_disconnect(ID)
+1 if (connected) call io_disconnect(ID)
+ !
+ call timing('io_'//db_name,OPR='stop')
 end subroutine K_dump_full_matrix

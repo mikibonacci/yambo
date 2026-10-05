@@ -27,7 +27,7 @@ subroutine K_diago_driver(iq,W,X_static)
  use units,          ONLY:HA2EV
  use BS,             ONLY:BS_K_coupling,BS_H_dim,BS_K_dim,BS_perturbative_SOC,&
 &                         BS_res_ares_n_mat,l_BS_optics,l_BS_dichroism,l_BS_ares_from_res,&
-&                         BS_dyn_kernel_full !,BS_Blocks_symmetrize_K,&
+&                         BS_dyn_kernel_full,BS_dyn_kernel_hermitianize !,BS_Blocks_symmetrize_K,&
  use BS_solvers,     ONLY:io_BSS_diago,BSS_perturbative_width,BSS_mode, BSS_resize,BSS_n_eig_Input, &
 &                         BSS_write_eig_2_db,BSS_eh_W,BSS_n_eig,BS_E,BSS_slepc_pseudo_herm,write_bs_ev_par,&
 &                         BSS_ydiago_solver,BSS_first_eig,BSS_target_E,BSS_trange_E,BSS_er,BSS_slepc_precondition
@@ -156,9 +156,10 @@ subroutine K_diago_driver(iq,W,X_static)
 endif
 #endif
  !
- ! Dynamic MPA is explicitly Hermitianized in the dense matrix path.  Force
- ! the ordinary Hermitian diagonalizer so block/shell solvers cannot bypass
- ! that projection or apply static BSE symmetries to the raw blocks.
+ ! Dynamic MPA uses the dense path while the ordered matrix is being built.
+ ! The matrix property is selected below through K_is_not_hermitian: the
+ ! Hermitianized mode uses the ordinary branch, while the default full mode
+ ! uses the generic complex eigensolver branch.
  if (BS_dyn_kernel_full) then
    l_ydiago=.FALSE.
    l_slepc =.FALSE.
@@ -627,8 +628,9 @@ endif
      !
      K_is_not_hermitian=BS_K_coupling.or.(allocated(BSS_eh_W).and..not.BSS_perturbative_width)
      if (BS_dyn_kernel_full) then
-       ! K_stored_in_a_big_matrix has already projected the dense matrix.
-       K_is_not_hermitian=.FALSE.
+       ! The ordered dynamic matrix is projected only in the optional
+       ! Hermitianized mode.  Otherwise retain the generic non-Hermitian path.
+       K_is_not_hermitian=.not.BS_dyn_kernel_hermitianize
      endif
      !
 #if defined _SLEPC && !defined _NL

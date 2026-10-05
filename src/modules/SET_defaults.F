@@ -58,7 +58,7 @@ subroutine SET_defaults(INSTR,IND,OD,COM_DIR)
  use BS,         ONLY:BS_n_g_W,BS_eh_en,BS_identifier,BS_q,BS_eh_win,MAX_BSK_LIN_size,&
 &                     BS_K_dim,BS_not_const_eh_f,BSK_mode,l_BSE_kernel_complete,&
 &                     BS_K_is_ALDA,BSE_mode,BSE_prop,BSE_L_kind,BS_K_cutoff,BS_perturbative_SOC,BSK_IO_mode,&
-&                     BS_dyn_omega, BS_dyn_eta,BS_dump_full_H
+&                     BS_dyn_omega, BS_dyn_eta,BS_dyn_kernel_hermitianize,BS_dump_full_H
  use TDDFT,      ONLY:FXC_type,FXC_n_g_corr,FXC_mode,&
 &                     FXC_per_memstps,FXC_LRC_alpha,FXC_PF_alpha,FXC_LRC_beta,FXC_SVD_digits,&
 &                     FXC_is_retarded,TDDFT_mode
@@ -478,6 +478,7 @@ subroutine SET_defaults(INSTR,IND,OD,COM_DIR)
  MAX_BSK_LIN_size=45000*45000 ! 46341 is the sqare root of the maximum integer in IP: 2147483647
  BS_dyn_omega=-1
  BS_dyn_eta=0.01_SP/HA2EV
+ BS_dyn_kernel_hermitianize=.FALSE.
  BS_dump_full_H=.FALSE.
  !
  call IO_desc_reset(BSS_desc)

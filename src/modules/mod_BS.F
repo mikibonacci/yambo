@@ -144,6 +144,9 @@ module BS
  real(SP):: BS_dyn_eta
  ! Dynamic MPA kernels are evaluated for every ordered transition pair.
  logical :: BS_dyn_kernel_full=.FALSE.
+ ! Project the ordered dynamic matrix onto its Hermitian part before solving.
+ ! The default is false: solve the full complex matrix.
+ logical :: BS_dyn_kernel_hermitianize=.FALSE.
  ! Dump the raw and Hermitianized dense BSE matrices for external checks.
  logical :: BS_dump_full_H=.FALSE.
  !
