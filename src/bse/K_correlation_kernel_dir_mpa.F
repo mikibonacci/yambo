@@ -167,13 +167,9 @@ function K_correlation_kernel_dir_mpa(i_block,i_p,i_pmq, i_k, i_kmq, Ken, omega_
        endif
        ! MPA_R is the residue of X*gamp, because the fit input was
        ! X_par*isc%gamp.  The Coulomb prefactor must not be applied again.
-       ! Use the same pole convention as QP_mpa.F.  The MPA fit is
-       ! invariant under the simultaneous transformation E_n -> s E_n,
-       ! R_n -> s R_n, with s=sign(Im(E_n)).  Apply that convention only
-       ! in the reconstruction; the values stored in the MPA database are
-       ! left untouched.
-       pole_sign=sign(1._SP,aimag( &
-&        MPA_E_store(iq_mpa)%blc(ng1,ng2,i_np)))
+       ! NB: here we do not use the same pole convention as QP_mpa.F,
+       ! because we need positive poles, already enforced in mod_MPA
+       pole_sign= 1._SP !sign(1._SP,aimag(MPA_E_store(iq_mpa)%blc(ng1,ng2,i_np)))
        E_eff=pole_sign*MPA_E_store(iq_mpa)%blc(ng1,ng2,i_np)
        R_eff=pole_sign*MPA_R_store(iq_mpa)%blc(ng1,ng2,i_np)
        pole_factor=R_eff*( &
