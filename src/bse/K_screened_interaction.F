@@ -90,8 +90,9 @@ subroutine K_screened_interaction(X,Xw,q,io_X_err)
    !
    if (W_is_em1s) call X_ALLOC_elemental('X',(/X%ng,X%ng,1/))
    if (W_is_pp)   call X_ALLOC_elemental('X',(/X%ng,X%ng,2/))
-   ! is w=0 always the first one in Xmpa?
-   if (W_is_mpa)   call X_ALLOC_elemental('X',(/X%ng,X%ng,X%mpa_npoles/))
+   ! Xmpa stores the complete frequency grid, which contains two samples
+   ! per MPA pole.  io_X reads all Xw%n_freqs samples into X_mat.
+   if (W_is_mpa)   call X_ALLOC_elemental('X',(/X%ng,X%ng,Xw%n_freqs/))
    !
  endif
  !
