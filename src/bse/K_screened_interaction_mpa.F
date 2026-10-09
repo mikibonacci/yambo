@@ -27,7 +27,7 @@ subroutine K_screened_interaction_mpa(X,Xw,q,io_X_err)
  use frequency,    ONLY:w_samp
  use drivers,      ONLY:l_td_hf,l_tddft,l_rim_w
  use collision_el, ONLY:elemental_collision,elemental_collision_free
-  use R_lattice,    ONLY:bz_samp,RIM_W,RIM_W_ng,RIM_W_is_diagonal
+  use R_lattice,    ONLY:bz_samp,RIM_W,RIM_W_ng,RIM_W_is_diagonal,RIM_qpg,RIM_anisotropy
  use D_lattice,    ONLY:i_time_rev,i_space_inv
  use ALLOC,        ONLY:X_ALLOC_elemental
  use X_m,          ONLY:X_t,X_par
@@ -131,6 +131,14 @@ subroutine K_screened_interaction_mpa(X,Xw,q,io_X_err)
      YAMBO_ALLOC(MPA_V_store(iq_W)%blc,(BS_n_g_W,BS_W_size2,1))
      MPA_V_store(iq_W)%blc(:,:,1)=isc%gamp(:BS_n_g_W,:BS_W_size2)
    enddo
+   ! Match the static screened-interaction head correction.  The RIM part
+   ! of the dynamical fit is already represented by RIM_W/2 below; only the
+   ! frequency-independent identity term needs this correction.
+   if (RIM_anisotropy/=0._SP.and.allocated(RIM_qpg)) then
+     MPA_V_store(1)%blc(1,1,1)=MPA_V_store(1)%blc(1,1,1)+ &
+&                                cmplx((RIM_qpg(1,1,1)-RIM_anisotropy)/2._SP, &
+&                                      0._SP,kind=SP)
+   endif
    call elemental_collision_free(isc)
    io_X_err=0
    return
@@ -250,6 +258,13 @@ subroutine K_screened_interaction_mpa(X,Xw,q,io_X_err)
      call MATRIX_init("SER",MPA_V_store(iq_W),BS_n_g_W,1)
      YAMBO_ALLOC(MPA_V_store(iq_W)%blc,(BS_n_g_W,BS_W_size2,1))
      MPA_V_store(iq_W)%blc(:,:,1)=isc%gamp(:BS_n_g_W,:BS_W_size2)
+     if (iq_W==1.and.RIM_anisotropy/=0._SP.and.allocated(RIM_qpg)) then
+       ! The RIM pole fit already supplies RIM_W/2.  Add only the same
+       ! static bare-head correction applied in K_screened_interaction.F.
+       MPA_V_store(iq_W)%blc(1,1,1)=MPA_V_store(iq_W)%blc(1,1,1)+ &
+&                                    cmplx((RIM_qpg(1,1,1)-RIM_anisotropy)/2._SP, &
+&                                          0._SP,kind=SP)
+     endif
    endif
    !
    IO_ACT=manage_action(RD_CL_IF_END,iq_W,1,q%nibz)
