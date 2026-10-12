@@ -14,6 +14,7 @@ function K_correlation_kernel_dir_mpa(i_block,i_p,i_pmq, i_k, i_kmq, Ken, omega_
 &                                 BS_n_g_W,O1,O2,O_times_W)
  !
  use pars,         ONLY:SP,cZERO,pi
+ use units,        ONLY:HA2EV
  use BS,           ONLY:BS_blk
  use mpa_m,        ONLY:MPA_E_store,MPA_R_store,MPA_V_store
  use R_lattice,    ONLY:DEV_VAR(G_m_G),DEV_VAR(g_rot)
@@ -38,9 +39,13 @@ function K_correlation_kernel_dir_mpa(i_block,i_p,i_pmq, i_k, i_kmq, Ken, omega_
  complex(SP)  :: z_cv_prime,z_c_prime_v,pole_factor
  complex(SP)  :: E_eff,R_eff
  real(SP)     :: pole_sign
+ logical      :: l_static_limit
  complex(SP), allocatable DEV_ATTR :: W_pole(:,:)
  complex(SP), pointer DEV_ATTR :: O_c_d_iO1(:)
  complex(SP), pointer DEV_ATTR :: O_c_d_iO2(:)
+ complex(SP), pointer DEV_ATTR :: MPA_E_d(:,:,:)
+ complex(SP), pointer DEV_ATTR :: MPA_R_d(:,:,:)
+ complex(SP), pointer DEV_ATTR :: MPA_V_d(:,:,:)
  logical      :: l_time_reversal_block
  !
  type(levels), intent(in) :: Ken
@@ -88,7 +93,9 @@ function K_correlation_kernel_dir_mpa(i_block,i_p,i_pmq, i_k, i_kmq, Ken, omega_
    K_correlation_kernel_dir_mpa=cZERO
    return
  endif
- if (eta<=0._SP) call error('[BSE MPA] BSEDynEta must be positive')
+ l_static_limit=abs(omega_s+2._SP)<1.e-4_SP.or.&
+&               abs(omega_s*HA2EV+2._SP)<1.e-4_SP
+ if (.not.l_static_limit.and.eta<=0._SP) call error('[BSE MPA] BSEDynEta must be positive')
  !
  ! The two denominators are crossed: the first combines c(k) with v'(p-q),
  ! while the second combines c'(p) with v(k-q).  Ken uses IBZ k indices;
@@ -96,8 +103,15 @@ function K_correlation_kernel_dir_mpa(i_block,i_p,i_pmq, i_k, i_kmq, Ken, omega_
  ! were generated.
  d_cv_prime=Ken%E(i_n_k,i_k,i_k_sp_pol_n)-Ken%E(i_m_p,i_pmq,i_p_sp_pol_m)
  d_c_prime_v=Ken%E(i_n_p,i_p,i_p_sp_pol_n)-Ken%E(i_m_k,i_kmq,i_k_sp_pol_m)
- z_cv_prime=cmplx(omega_s-d_cv_prime,eta,kind=SP)
- z_c_prime_v=cmplx(omega_s-d_c_prime_v,eta,kind=SP)
+ if (l_static_limit) then
+   ! BSEDynOmega=-2 requests the exact static limit of the MPA
+   ! contraction: both transition-frequency arguments are zero.
+   z_cv_prime=cZERO
+   z_c_prime_v=cZERO
+ else
+   z_cv_prime=cmplx(omega_s-d_cv_prime,eta,kind=SP)
+   z_c_prime_v=cmplx(omega_s-d_c_prime_v,eta,kind=SP)
+ endif
  !
  ! W_pole is a workspace.  The pole matrix is rebuilt for every pole,
  ! because its denominator depends on G,G' through E_n(G,G').
@@ -140,6 +154,13 @@ function K_correlation_kernel_dir_mpa(i_block,i_p,i_pmq, i_k, i_kmq, Ken, omega_
    K_correlation_kernel_dir_mpa=cZERO
    return
  endif
+ ! The PAR_matrix descriptors remain on the host, but their raw matrix
+ ! components have device counterparts in CUDA/OpenACC builds.  Associate
+ ! device pointers once, before entering the CUF kernel; the derived-type
+ ! stores themselves must not be referenced from device code.
+ MPA_E_d => DEV_VAR(MPA_E_store(iq_mpa)%blc)
+ MPA_R_d => DEV_VAR(MPA_R_store(iq_mpa)%blc)
+ MPA_V_d => DEV_VAR(MPA_V_store(iq_mpa)%blc)
  do i_np=1,n_poles
    ! Build the screened pole contribution element by element.  MPA_R already
    ! contains the residue of the fitted X*gamp quantity, so no second gamp
@@ -169,16 +190,16 @@ function K_correlation_kernel_dir_mpa(i_block,i_p,i_pmq, i_k, i_kmq, Ken, omega_
        ! X_par*isc%gamp.  The Coulomb prefactor must not be applied again.
        ! NB: here we do use the same pole convention as QP_mpa.F,
        ! positive Re and negative Im are enforced in mod_MPA, 
-       pole_sign=-sign(1._SP,aimag(MPA_E_store(iq_mpa)%blc(ng1,ng2,i_np)))
-       E_eff=pole_sign*MPA_E_store(iq_mpa)%blc(ng1,ng2,i_np)
-       R_eff=pole_sign*MPA_R_store(iq_mpa)%blc(ng1,ng2,i_np)
+       pole_sign=-sign(1._SP,aimag(MPA_E_d(ng1,ng2,i_np)))
+       E_eff=pole_sign*MPA_E_d(ng1,ng2,i_np)
+       R_eff=pole_sign*MPA_R_d(ng1,ng2,i_np)
        pole_factor=R_eff*( &
 &        1._SP/(z_cv_prime-E_eff)+ &
 &        1._SP/(z_c_prime_v-E_eff))
        W_pole(i_g1,i_g2)=pole_factor
        if (i_np==1.and.i_g1==i_g2) then
          W_pole(i_g1,i_g2)=W_pole(i_g1,i_g2)+ &
-&          MPA_V_store(iq_mpa)%blc(i_g1,i_g1,1)
+&          MPA_V_d(i_g1,i_g1,1)
        endif
      enddo
    enddo
@@ -211,6 +232,7 @@ subroutine K_mpa_load_if_needed(X,Xw,q,l_loaded)
  use IO_m,         ONLY:OP_RD_CL,DUMP,REP,NONE,io_MULTIPOLE,IO_NO_DATABASE,deliver_IO_error_message
  use parallel_int, ONLY:PP_redux_wait
  use parallel_m,   ONLY:ncpu
+ use gpu_m,        ONLY:have_gpu
 #include<y_memory.h>
  type(X_t), intent(in) :: X
  type(w_samp), intent(in) :: Xw
@@ -311,6 +333,10 @@ subroutine K_mpa_load_if_needed(X,Xw,q,l_loaded)
    YAMBO_ALLOC(MPA_R_store(iq)%blc,(X%ng,X%ng,X%mpa_npoles))
    MPA_E_store(iq)%blc=MPA_E_par(1)%blc
    MPA_R_store(iq)%blc=MPA_R_par(1)%blc
+   if (have_gpu) then
+     YAMBO_ALLOC_GPU_SOURCE(DEV_VAR(MPA_E_store(iq)%blc),MPA_E_store(iq)%blc)
+     YAMBO_ALLOC_GPU_SOURCE(DEV_VAR(MPA_R_store(iq)%blc),MPA_R_store(iq)%blc)
+   endif
  enddo
  if (present(l_loaded)) l_loaded=load_ok
  !

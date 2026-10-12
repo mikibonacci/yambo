@@ -57,7 +57,9 @@ subroutine K_driver_init(what,iq,Ken,Xk)
  ! This flag is needed before transition grouping and K_blocks, not only
  ! inside K_kernel, because dynamic MPA requires all ordered blocks.
  BS_dyn_kernel_full=(BS_res_K_corr.or.BS_cpl_K_corr).and..not.l_bs_fxc.and.&
-&                    l_mpa.and.BS_dyn_omega>0._SP
+&                    l_mpa.and.(BS_dyn_omega>0._SP.or.&
+&                    (abs(BS_dyn_omega+2._SP)<1.e-4_SP.or.&
+&                     abs(BS_dyn_omega*HA2EV+2._SP)<1.e-4_SP))
  ! DEBUG MIKI: report the selected BSE kernel mode once, with both the
  ! user-facing eV values and the internal Hartree values.
  if (what=="init") then

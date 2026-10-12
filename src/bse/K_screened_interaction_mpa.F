@@ -139,6 +139,11 @@ subroutine K_screened_interaction_mpa(X,Xw,q,io_X_err)
 &                                cmplx((RIM_qpg(1,1,1)-RIM_anisotropy)/2._SP, &
 &                                      0._SP,kind=SP)
    endif
+   if (have_gpu) then
+     do iq_W=1,size(MPA_V_store)
+       YAMBO_ALLOC_GPU_SOURCE(DEV_VAR(MPA_V_store(iq_W)%blc),MPA_V_store(iq_W)%blc)
+     enddo
+   endif
    call elemental_collision_free(isc)
    io_X_err=0
    return
@@ -265,6 +270,9 @@ subroutine K_screened_interaction_mpa(X,Xw,q,io_X_err)
 &                                    cmplx((RIM_qpg(1,1,1)-RIM_anisotropy)/2._SP, &
 &                                          0._SP,kind=SP)
      endif
+     if (have_gpu) then
+       YAMBO_ALLOC_GPU_SOURCE(DEV_VAR(MPA_V_store(iq_W)%blc),MPA_V_store(iq_W)%blc)
+     endif
    endif
    !
    IO_ACT=manage_action(RD_CL_IF_END,iq_W,1,q%nibz)
@@ -379,9 +387,15 @@ subroutine K_screened_interaction_mpa(X,Xw,q,io_X_err)
     if (l_keep_MPA_in_memory) then
       call MATRIX_copy(MPA_E_par(1),MPA_E_store(iq_W),.TRUE.)
       MPA_E_store(iq_W)%blc = MPA_E_par(1)%blc
+      if (have_gpu) then
+        YAMBO_ALLOC_GPU_SOURCE(DEV_VAR(MPA_E_store(iq_W)%blc),MPA_E_store(iq_W)%blc)
+      endif
 
       call MATRIX_copy(MPA_R_par(1),MPA_R_store(iq_W),.TRUE.)
       MPA_R_store(iq_W)%blc = MPA_R_par(1)%blc
+      if (have_gpu) then
+        YAMBO_ALLOC_GPU_SOURCE(DEV_VAR(MPA_R_store(iq_W)%blc),MPA_R_store(iq_W)%blc)
+      endif
     endif
     !
     call timing('BSE(mpa)_poles_io',OPR='stop')

@@ -52,6 +52,7 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
  use MAGNONS,       ONLY:BSS_MAGN_free
  use PHOTOLUM,      ONLY:BSS_PL_free
  use parser_m,      ONLY:parser
+ use units,          ONLY:HA2EV
  !
 #include<dev_defs.h>
 #include<y_memory.h>
@@ -213,7 +214,10 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
  ! transition groups and blocks were already created with this flag by
  ! K_driver_init; repeat the assignment here after the local correlation
  ! selection has been finalized.
- l_dynamic_kernel = l_bs_corr .and. l_mpa .and. BS_dyn_omega > 0._SP
+ l_dynamic_kernel = l_bs_corr .and. l_mpa .and. &
+&                   (BS_dyn_omega > 0._SP .or. &
+&                    (abs(BS_dyn_omega+2._SP)<1.e-4_SP.or.&
+&                     abs(BS_dyn_omega*HA2EV+2._SP)<1.e-4_SP))
  BS_dyn_kernel_full = l_dynamic_kernel
  if (BS_dyn_kernel_full) then
    ! A previous triangular/static database cannot be used as the source of
@@ -254,8 +258,10 @@ subroutine K_kernel(iq,Ken,Xk,q,X,Xw,W_bss)
  !
  ! If MPA, we perform the fit and we obtain the MPA coefficients. 
  ! The effective dynamical W will be computed inside the correlation_mpa function
- ! A non-positive user frequency selects the static MPA/BSE path.  A
- ! strictly positive frequency activates the dynamical pole contraction.
+ ! BSEDynOmega=-1 selects the ordinary static BSE path.  BSEDynOmega=-2
+ ! selects the MPA contraction with z_cv'=z_c'v=0, i.e. the exact static
+ ! limit of the MPA representation.  A strictly positive frequency
+ ! activates the dynamical pole contraction.
  if (l_bs_corr.and.l_mpa) then
    if (l_dynamic_kernel) then
      if (.not.l_dir_alg) call error('[BSE MPA] Dynamic kernel requires the direct correlation algorithm')
