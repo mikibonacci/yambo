@@ -307,8 +307,8 @@ subroutine K_screened_interaction_mpa(X,Xw,q,io_X_err)
    allocate(MPA_Xo(Xw%n_freqs))
    !$omp do collapse(2)
    do i_g2= ig_first, ig_last
-     i_g2_mat=min(i_g2,X%ng)
      do i_g1=1, BS_n_g_W
+       i_g2_mat=min(i_g2,X%ng)
        i_g1_mat=min(i_g1,X%ng)
        !
         l_RIM_W_g=(l_rim_w.and.i_g1<=RIM_W_ng.and.i_g2<=RIM_W_ng)
